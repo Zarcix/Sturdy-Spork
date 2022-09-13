@@ -30,6 +30,7 @@ VIDEO:
 mp4 = mp4
 mkv = x-matroska
 m3u8 = hls
+mov = quicktime
 
 IMAGES:
 png = png
