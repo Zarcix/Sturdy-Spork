@@ -123,7 +123,7 @@ fn main_menu_print(window: &pancurses::Window, client: &reqwest::blocking::Clien
         window.printw("Welcome to the Main Menu
         Avaiable Options:
         (Q)ueue a new video
-        Toggle (P)ause
+        (Space) to toggle pause
         (Esc) to quit
         ");
 
@@ -140,7 +140,7 @@ fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Clien
                 return
             }
 
-            pancurses::Input::Character('p') => {
+            pancurses::Input::Character(' ') => {
                 pause(client);
                 return
             }
