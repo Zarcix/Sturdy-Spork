@@ -12,31 +12,83 @@ static FILETYPES: phf::Map<&'static str, (&'static str, &'static str)> = phf_map
     "jpg" => ("image", "jpg"),
 };
 
+static mut IP: String = String::new();
+
 fn main() {
-    env_logger::init();
+    let result = env_logger::try_init();
+    let window = pancurses::initscr();
+    
 
     let client = reqwest::blocking::Client::new();
-    let mut URL = String::new();
 
+    window.printw("Enter TV IP: ");
+    window.keypad(true);
+
+    unsafe {
+        IP = user_input(&window);
+    }
     
-    println!("Enter the IP of the Roku Device: ");
-    std::io::stdin().read_line(&mut URL).expect("Bad Input.");
-    URL.pop();
+    let result = launch_wvc(unsafe {&IP}, &client);
 
-    launch_wvc(&URL, &client);
+    if result.is_err() {
+        error_reset(&window,  result.unwrap_err())
+    }
 
-    start_video(&URL, &client);
-
+    main_menu_print(&window, &client);
 }
 
-fn launch_wvc(url: &str, client: &reqwest::blocking::Client) {
+fn user_input(window: &pancurses::Window) -> String {
+    let mut user_input = String::new();
+    while let Some(input) = window.getch() {
+        match input {
+            pancurses::Input::KeyBackspace => {
+                if user_input.is_empty() {
+                    window.addch(' ');
+                } else {
+                    window.delch();
+                }
+
+                window.refresh();
+
+                user_input.pop();
+            }
+            pancurses::Input::Character(input) => {
+                if input == '\n' {
+                    break;
+                }
+                user_input.push(input);
+            }
+            _ => {}
+        }
+    }
+
+    user_input
+}
+
+fn error_reset(window: &pancurses::Window, err: String) { // Generates main menu 
+    window.printw(format!("Error: {}. Press 'Enter' to continue.", err));
+
+        while let Some(input) = window.getch() {
+            match input {
+                pancurses::Input::Character(input) => {
+                    if input == '\n' {
+                        window.clear();
+                        pancurses::endwin();
+                        main();
+                        return;
+                    }
+                }
+                _ => {}
+            }
+        }
+}
+
+fn launch_wvc(url: &str, client: &reqwest::blocking::Client) -> Result<(), String> {
     log::debug!("Pinging Device...");
     let response = client.get(format!("http://{}:8060/query/apps", &url)).send();
     match response {
-        Err(_) => {
-            println!("IP is not a Roku Device\n");
-            main();
-            return;
+        Err(a) => {
+            return Result::Err(a.to_string());
         }
 
         _ => {}
@@ -48,9 +100,7 @@ fn launch_wvc(url: &str, client: &reqwest::blocking::Client) {
     let elem = doc.descendants().find(|n| n.text() == Some("Web Video Caster - Receiver"));
     match elem {
         None => {
-            println!("Device does not have Web Video Caster installed. Closing");
-            main();
-            return;
+            return Result::Err("Web Video Caster not installed".to_string());
         }
 
         _ => {}
@@ -62,30 +112,95 @@ fn launch_wvc(url: &str, client: &reqwest::blocking::Client) {
     client.post(format!("http://{}:8060/launch/{}", &url, &elem)).send().unwrap();
 
     log::debug!("Launched Web Video Caster on the Roku Device!");
+    
+    return Result::Ok(());
 
 }
 
-fn start_video(url: &str, client: &reqwest::blocking::Client) {
-    let mut input_url = String::new();
-    println!("Enter a URL for the video or image you are about to play:");
+fn main_menu_print(window: &pancurses::Window, client: &reqwest::blocking::Client) {
+    loop {
+        window.clear();
+        window.printw("Welcome to the Main Menu
+        Avaiable Options:
+        (Q)ueue a new video
+        Toggle (P)ause
+        (Esc) to quit
+        ");
 
-    std::io::stdin().read_line(&mut input_url).expect("Bad Input");
-    input_url.pop();
-    if !input_url.contains("http") || !input_url.contains("://"){
-        println!("Not a valid HTTP request.");
-        start_video(url, client);
+        main_menu_parse(window, client);
     }
+}
 
-    println!("Enter the file extension for the previous input. Supported extensions are:\n");
+fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Client) {
+    while let Some(input) = window.getch() {
+        match input {
+            pancurses::Input::Character('q') => {
+                window.clear();
+                play_video(window, client);
+                return
+            }
+
+            pancurses::Input::Character('p') => {
+                pause(client);
+                return
+            }
+
+            pancurses::Input::Character('\u{1b}') => {
+                pancurses::endwin();
+                std::process::exit(0);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn play_video(window: &pancurses::Window, client: &reqwest::blocking::Client) {
+    window.printw("Enter the URL that you want to play:\n");
+    window.refresh();
+
+    let vid_url = user_input(window);
+
+
+    window.clear();
+    window.printw("Please enter a file extension. Supposed extensions are:");
     for (key, value) in &FILETYPES {
-        println!("{}: {}", value.0, key);
+        window.printw(format!("{}: {}\n", value.0, key));
     }
-    let mut extension = String::new();
-    std::io::stdin().read_line(&mut extension).expect("Bad Input");
-    extension.pop();
+    window.printw("Input: ");
+    let extension = user_input(window);
 
-    let extension = *FILETYPES.get(&extension).expect("Extension Not Found");
+    let playvid_status = start_video(&vid_url, &extension, client);
+
+    if playvid_status.is_err() {
+        let err = playvid_status.unwrap_err();
+        window.clear();
+        window.printw(err);
+        play_video(window, client);
+    }
+
+}
+
+fn pause(client: &reqwest::blocking::Client) {
+    let ip = unsafe {&IP};
+    client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
+}
+fn start_video(input_url: &String, extension: &String, client: &reqwest::blocking::Client) -> Result<(), String> {
+    if !input_url.contains("http") || !input_url.contains("://"){
+        return Err("Not a valid URL".to_string());
+    }
+    let extension = FILETYPES.get(&extension);
+
+    if extension.is_none() {
+        return Err("Not a valid extension choice".to_string());
+    }
+
+    let extension = extension.unwrap().to_owned();
 
     let encoded_url = urlencoding::encode(&input_url);
-    client.post(format!("http://{url}:8060/input?cmd=play&url={encoded_url}&pos=0&tit=Video&sub=false&media={}&fmt={}", extension.0, extension.1)).send().unwrap();
+
+    let ip = unsafe {&IP};
+
+    client.post(format!("http://{ip}:8060/input?cmd=play&url={encoded_url}&pos=0&tit=Video&sub=false&media={}&fmt={}", extension.0, extension.1)).send().unwrap();
+    
+    return Ok(())
 }
