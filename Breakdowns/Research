@@ -37,4 +37,13 @@ IMAGES:
 png = png
 jpg = jpg
 
+Media Controls:
+subtitles = /input?cmd=subtitlesSet&url={URLTOSUBTITLES}&lang={LANG}
+fast forward = /keypress/Fwd
+reverse = /keypress/Rev
+pause = /keypress/Play
+
+Video Query:
+media-player = /query/media-player
+
 
