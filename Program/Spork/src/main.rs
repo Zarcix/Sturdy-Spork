@@ -120,36 +120,137 @@ fn launch_wvc(url: &str, client: &reqwest::blocking::Client) -> Result<(), Strin
 fn main_menu_print(window: &pancurses::Window, client: &reqwest::blocking::Client) {
     loop {
         window.clear();
-        window.printw("Welcome to the Main Menu
-        Avaiable Options:
-        (Q)ueue a new video
-        (Space) to toggle pause
-        (Esc) to quit
-        ");
+        window.printw("Esc to quit");
+        let (max_y,max_x) = window.get_max_yx();
 
+        let control_win = window.subwin(8, max_x, max_y - 8, 0).unwrap();
+        control_win.draw_box(0, 0);
+
+
+        control_win_print(&control_win, client);
+
+
+        window.refresh();
         main_menu_parse(window, client);
     }
+}
+
+fn control_win_print(window: &pancurses::Window, client: &reqwest::blocking::Client) {
+    //TODO need to update this with time
+
+    // Reverse
+    window.mvprintw(4, 1, "<--");
+    window.mvprintw(5, 1, "<<-");
+    window.mvprintw(6, 1, "<<<");
+
+    // Space
+    window.mvprintw(4, window.get_max_x() / 2 - 7, "Pause");
+    window.mvprintw(5, window.get_max_x() / 2 - 7, "Space");
+    window.mvprintw(6, window.get_max_x() / 2 - 7, "Pause");
+
+    // Fast-Forward
+    window.mvprintw(4, window.get_max_x() - 4, "-->");
+    window.mvprintw(5, window.get_max_x() - 4, "->>");
+    window.mvprintw(6, window.get_max_x() - 4, ">>>");
+
+    let stats = vid_status(client);
+    window.printw(format!("{:?}", stats));
+}
+
+fn vid_status(client: &reqwest::blocking::Client) -> ((i32, i32), i32) {
+
+    let ip = unsafe {&IP};
+    let status = client.get(format!("http://{ip}:8060/query/media-player")).send().unwrap().text().unwrap();
+    let mut times = (-1, -1);
+    let is_playing = is_playing(&status);
+
+    if is_playing != 0 {
+        times = time_status(&status);
+    }
+
+    return (times, is_playing)
+
+}
+
+fn is_playing(req: &String) -> i32 {
+    let split: Vec<&str> = req.split("state=\"").collect();
+    let string = split[1].to_string();
+    let split: Vec<&str> = string.split("\">").collect();
+    let string = split[0];
+
+    if string == "play" { return 1 }
+    if string == "pause" { return 2 }
+
+    return 0;
+}
+
+fn time_status(req: &String) -> (i32, i32) {
+    let split: Vec<&str> = req.split("<position>").collect();
+    let string = split[1].to_string();
+    let split: Vec<&str> = string.split(" ms</position>").collect();
+    let mut currentTime = split[0].parse::<i32>().unwrap();
+    currentTime = currentTime / 1000;
+
+
+    let split: Vec<&str> = req.split("<duration>").collect();
+    let string = split[1].to_string();
+    let split: Vec<&str> = string.split(" ms</duration>").collect();
+    let mut maxTime = split[0].parse::<i32>().unwrap();
+    maxTime = maxTime / 1000;
+
+    return (currentTime, maxTime)
 }
 
 fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Client) {
     while let Some(input) = window.getch() {
         match input {
+            // Media Controls
+            pancurses::Input::KeyLeft => {
+                let ip = unsafe{&IP};
+                client.post(format!("http://{ip}:8060/keypress/Left")).send().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
+            }
+            pancurses::Input::KeyRight => {
+                let ip = unsafe{&IP};
+                client.post(format!("http://{ip}:8060/keypress/Right")).send().unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
+            }
+            pancurses::Input::KeySRight => {
+                let ip = unsafe{&IP};
+                client.post(format!("http://{ip}:8060/keypress/Fwd")).send().unwrap();
+            }
+            pancurses::Input::KeySLeft => {
+                let ip = unsafe{&IP};
+                client.post(format!("http://{ip}:8060/keypress/Rev")).send().unwrap();
+            }
+            pancurses::Input::Character(' ') => {
+                pause(client);
+                return
+            }
+
+            // Application Controls
+            pancurses::Input::Character('\u{1b}') => { // Esc Control
+                // Relocate user back to home
+                let ip = unsafe {&IP};
+                client.post(format!("http://{ip}:8060/keypress/Home")).send().unwrap();
+
+                pancurses::endwin();
+                std::process::exit(0);
+            }
+
+            // Queueing Videos
             pancurses::Input::Character('q') => {
                 window.clear();
                 play_video(window, client);
                 return
             }
 
-            pancurses::Input::Character(' ') => {
-                pause(client);
+            // Refresh on any other key
+            _ => {
                 return
             }
-
-            pancurses::Input::Character('\u{1b}') => {
-                pancurses::endwin();
-                std::process::exit(0);
-            }
-            _ => {}
         }
     }
 }
