@@ -13,3 +13,4 @@ env_logger = "0.9.0"
 urlencoding = "2.1.2"
 pancurses = "0.17.0"
 phf = { version = "0.11", default-features = false, features = ["macros"]}
+ctrlc = "3.2.3"

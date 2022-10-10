@@ -17,7 +17,15 @@ static mut IP: String = String::new();
 fn main() {
     let result = env_logger::try_init();
     let window = pancurses::initscr();
+
+    window.nodelay(true);
     
+
+    ctrlc::set_handler(move || {
+        pancurses::endwin();
+        std::process::exit(0);
+    })
+    .expect("Error setting Ctrl-C handler");
 
     let client = reqwest::blocking::Client::new();
 
@@ -38,10 +46,11 @@ fn main() {
 }
 
 fn user_input(window: &pancurses::Window) -> String {
+    window.nodelay(false);
     let mut user_input = String::new();
-    while let Some(input) = window.getch() {
-        match input {
-            pancurses::Input::KeyBackspace => {
+    loop {
+        match window.getch() {
+            Some(pancurses::Input::KeyBackspace) => {
                 if user_input.is_empty() {
                     window.addch(' ');
                 } else {
@@ -52,17 +61,21 @@ fn user_input(window: &pancurses::Window) -> String {
 
                 user_input.pop();
             }
-            pancurses::Input::Character(input) => {
+            Some(pancurses::Input::Character(input)) => {
                 if input == '\n' {
-                    break;
+
+                    window.nodelay(true);
+                    return user_input
                 }
                 user_input.push(input);
             }
-            _ => {}
+            Some(_) => (),
+            None => { 
+                window.nodelay(true);
+                return user_input 
+            }
         }
     }
-
-    user_input
 }
 
 fn error_reset(window: &pancurses::Window, err: String) { // Generates main menu 
@@ -131,7 +144,11 @@ fn main_menu_print(window: &pancurses::Window, client: &reqwest::blocking::Clien
 
 
         window.refresh();
-        main_menu_parse(window, client);
+
+        let getch = window.getch();
+
+        main_menu_parse(window, client, getch);
+        std::thread::sleep(std::time::Duration::from_millis(500));
     }
 }
 
@@ -201,56 +218,60 @@ fn time_status(req: &String) -> (i32, i32) {
     return (currentTime, maxTime)
 }
 
-fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Client) {
-    while let Some(input) = window.getch() {
-        match input {
-            // Media Controls
-            pancurses::Input::KeyLeft => {
-                let ip = unsafe{&IP};
-                client.post(format!("http://{ip}:8060/keypress/Left")).send().unwrap();
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
-            }
-            pancurses::Input::KeyRight => {
-                let ip = unsafe{&IP};
-                client.post(format!("http://{ip}:8060/keypress/Right")).send().unwrap();
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
-            }
-            pancurses::Input::KeySRight => {
-                let ip = unsafe{&IP};
-                client.post(format!("http://{ip}:8060/keypress/Fwd")).send().unwrap();
-            }
-            pancurses::Input::KeySLeft => {
-                let ip = unsafe{&IP};
-                client.post(format!("http://{ip}:8060/keypress/Rev")).send().unwrap();
-            }
-            pancurses::Input::Character(' ') => {
-                pause(client);
-                return
-            }
+fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Client, getch: Option<pancurses::Input>) {
+    if getch.is_none() {
+        return
+    }
 
-            // Application Controls
-            pancurses::Input::Character('\u{1b}') => { // Esc Control
-                // Relocate user back to home
-                let ip = unsafe {&IP};
-                client.post(format!("http://{ip}:8060/keypress/Home")).send().unwrap();
+    let getch = getch.unwrap();
 
-                pancurses::endwin();
-                std::process::exit(0);
-            }
+    match getch {
+        // Media Controls
+        pancurses::Input::KeyLeft => {
+            let ip = unsafe{&IP};
+            client.post(format!("http://{ip}:8060/keypress/Left")).send().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
+        }
+        pancurses::Input::KeyRight => {
+            let ip = unsafe{&IP};
+            client.post(format!("http://{ip}:8060/keypress/Right")).send().unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
+        }
+        pancurses::Input::KeySRight => {
+            let ip = unsafe{&IP};
+            client.post(format!("http://{ip}:8060/keypress/Fwd")).send().unwrap();
+        }
+        pancurses::Input::KeySLeft => {
+            let ip = unsafe{&IP};
+            client.post(format!("http://{ip}:8060/keypress/Rev")).send().unwrap();
+        }
+        pancurses::Input::Character(' ') => {
+            pause(client);
+            return
+        }
 
-            // Queueing Videos
-            pancurses::Input::Character('q') => {
-                window.clear();
-                play_video(window, client);
-                return
-            }
+        // Application Controls
+        pancurses::Input::Character('\u{1b}') => { // Esc Control
+            // Relocate user back to home
+            let ip = unsafe {&IP};
+            client.post(format!("http://{ip}:8060/keypress/Home")).send().unwrap();
 
-            // Refresh on any other key
-            _ => {
-                return
-            }
+            pancurses::endwin();
+            std::process::exit(0);
+        }
+
+        // Queueing Videos
+        pancurses::Input::Character('q') => {
+            window.clear();
+            play_video(window, client);
+            return
+        }
+
+        // Refresh on any other key
+        _ => {
+            return
         }
     }
 }
