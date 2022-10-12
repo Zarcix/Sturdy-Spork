@@ -1,5 +1,5 @@
 use std::io::Read;
-
+mod api;
 use phf::phf_map;
 
 static FILETYPES: phf::Map<&'static str, (&'static str, &'static str)> = phf_map! {
@@ -20,14 +20,13 @@ fn main() {
 
     window.nodelay(true);
     
-
     ctrlc::set_handler(move || {
         pancurses::endwin();
         std::process::exit(0);
     })
     .expect("Error setting Ctrl-C handler");
 
-    let client = reqwest::blocking::Client::new();
+    let client = reqwest::blocking::Client::new(); // Need to make this an ArcMutex
 
     window.printw("Enter TV IP: ");
     window.keypad(true);
@@ -36,7 +35,12 @@ fn main() {
         IP = user_input(&window);
     }
     
-    let result = launch_wvc(unsafe {&IP}, &client);
+    let result = {
+        let client = client.clone();
+        std::thread::spawn(|| {
+            api::tv_calls::WVCLaunch(client)
+        }).join().unwrap()
+    };
 
     if result.is_err() {
         error_reset(&window,  result.unwrap_err())
@@ -94,40 +98,6 @@ fn error_reset(window: &pancurses::Window, err: String) { // Generates main menu
                 _ => {}
             }
         }
-}
-
-fn launch_wvc(url: &str, client: &reqwest::blocking::Client) -> Result<(), String> {
-    log::debug!("Pinging Device...");
-    let response = client.get(format!("http://{}:8060/query/apps", &url)).send();
-    match response {
-        Err(a) => {
-            return Result::Err(a.to_string());
-        }
-
-        _ => {}
-    }
-    log::debug!("Found Roku Device! Attempting to launch Web Video Caster...");
-    let response = response.unwrap().text().unwrap();
-
-    let doc = roxmltree::Document::parse(&response).unwrap();
-    let elem = doc.descendants().find(|n| n.text() == Some("Web Video Caster - Receiver"));
-    match elem {
-        None => {
-            return Result::Err("Web Video Caster not installed".to_string());
-        }
-
-        _ => {}
-    }
-    let elem = elem.unwrap().attribute("id").unwrap();
-
-    log::debug!("Found Web Video Caster on the Roku Device with ID: {}. Attempting to launch...", elem);
-
-    client.post(format!("http://{}:8060/launch/{}", &url, &elem)).send().unwrap();
-
-    log::debug!("Launched Web Video Caster on the Roku Device!");
-    
-    return Result::Ok(());
-
 }
 
 fn main_menu_print(window: &pancurses::Window, client: &reqwest::blocking::Client) {
@@ -224,39 +194,54 @@ fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Clien
     }
 
     let getch = getch.unwrap();
-
+    let client = client.clone();
     match getch {
         // Media Controls
         pancurses::Input::KeyLeft => {
-            let ip = unsafe{&IP};
-            client.post(format!("http://{ip}:8060/keypress/Left")).send().unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
+            { // Skip 5 backwards
+                std::thread::spawn(move || {
+                    api::tv_calls::TVLeft(client)
+                });
+            }
         }
         pancurses::Input::KeyRight => {
-            let ip = unsafe{&IP};
-            client.post(format!("http://{ip}:8060/keypress/Right")).send().unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
+            { // Skip 5 foward
+                std::thread::spawn(move || {
+                    api::tv_calls::TVRight(client)
+                });
+            }
         }
         pancurses::Input::KeySRight => {
-            let ip = unsafe{&IP};
-            client.post(format!("http://{ip}:8060/keypress/Fwd")).send().unwrap();
+            { // Fast Foward
+                std::thread::spawn(move || {
+                    api::tv_calls::TVFwd(client);
+                });
+            }
         }
         pancurses::Input::KeySLeft => {
-            let ip = unsafe{&IP};
-            client.post(format!("http://{ip}:8060/keypress/Rev")).send().unwrap();
+            { // Reverse
+                std::thread::spawn(move || {
+                    api::tv_calls::TVRev(client);
+                });
+            }
         }
         pancurses::Input::Character(' ') => {
-            pause(client);
+            { // TV Play/Pause
+                std::thread::spawn(move || {
+                    api::tv_calls::TVTogglePause(client)
+                });
+            }
             return
         }
 
         // Application Controls
         pancurses::Input::Character('\u{1b}') => { // Esc Control
             // Relocate user back to home
-            let ip = unsafe {&IP};
-            client.post(format!("http://{ip}:8060/keypress/Home")).send().unwrap();
+            { // TV Home
+                std::thread::spawn(move || {
+                    api::tv_calls::TVHome(client);
+                });
+            }
 
             pancurses::endwin();
             std::process::exit(0);
@@ -265,7 +250,7 @@ fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Clien
         // Queueing Videos
         pancurses::Input::Character('q') => {
             window.clear();
-            play_video(window, client);
+            play_video(window, &client);
             return
         }
 
@@ -291,38 +276,11 @@ fn play_video(window: &pancurses::Window, client: &reqwest::blocking::Client) {
     window.printw("Input: ");
     let extension = user_input(window);
 
-    let playvid_status = start_video(&vid_url, &extension, client);
-
-    if playvid_status.is_err() {
-        let err = playvid_status.unwrap_err();
-        window.clear();
-        window.printw(err);
-        play_video(window, client);
+    {
+        let client = client.clone();
+        std::thread::spawn(move || {
+            api::tv_calls::WVCPlay(client, &vid_url.to_owned(), &extension.to_owned())
+        });
     }
 
-}
-
-fn pause(client: &reqwest::blocking::Client) {
-    let ip = unsafe {&IP};
-    client.post(format!("http://{ip}:8060/keypress/Play")).send().unwrap();
-}
-fn start_video(input_url: &String, extension: &String, client: &reqwest::blocking::Client) -> Result<(), String> {
-    if !input_url.contains("http") || !input_url.contains("://"){
-        return Err("Not a valid URL".to_string());
-    }
-    let extension = FILETYPES.get(&extension);
-
-    if extension.is_none() {
-        return Err("Not a valid extension choice".to_string());
-    }
-
-    let extension = extension.unwrap().to_owned();
-
-    let encoded_url = urlencoding::encode(&input_url);
-
-    let ip = unsafe {&IP};
-
-    client.post(format!("http://{ip}:8060/input?cmd=play&url={encoded_url}&pos=0&tit=Video&sub=false&media={}&fmt={}", extension.0, extension.1)).send().unwrap();
-    
-    return Ok(())
 }
