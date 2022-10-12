@@ -1,29 +1,17 @@
-ip = 192.168.4.68
 
-http://ip:8060/launch/259656\&welcomeMessage\=Cast+your+favorite+web+videos
+Launching:
+http://ip:8060/launch/{Web Video Caster ID}
 
-http://192.168.4.68:8060/input?cmd=play\
-\
+Playing a video:
+http://ip:8060/input?cmd=play\
 &url=\
-\
-https%3A%2F%2Fcdnx01.anicache.net%2Fuser1342%2F6a7b7353b32ebba4f359ea184ab9df6c%2FEP.10.v0.1662908415.1080p.mp4%3Ftoken%3DTWH9BtsvSYEFq7q7HBU8xw%26expires%3D1663060818%26id%3D192020%0A
-\
+{VID URL}
 &pos=0\
-&sub=false&media=video&fmt=mp4
+&sub=false&media=video&fmt={FORMAT}
 
-http://192.168.4.68:8060/input?cmd=play&url=https%3A%2F%2Fcdnx01.anicache.net%2Fuser1342%2F6a7b7353b32ebba4f359ea184ab9df6c%2FEP.10.v0.1662908415.1080p.mp4%3Ftoken%3DTWH9BtsvSYEFq7q7HBU8xw%26expires%3D1663060818%26id%3D192020%0A&pos=0&sub=false&media=video&fmt=mp4
-
-/input?cmd=play
-
-&callback=http%3A%2F%2F192.168.4.29%3A30001%2Fremote_playback%2F-422773747
-
-&url=http%3A%2F%2F192.168.4.29%3A30001%2Ffile%2FqQ7LKPPD%2Fimage.jpg&pos=0&sub=false&tit=Slap&media=image&fmt=png
-
-
-
-
-
-
+Playing an image:
+http://ip:8060/input?cmd=play
+&url={IMG URL}&pos=0&sub=false&tit=IMG&media=image&fmt={FORMAT}
 
 # Formats
 
