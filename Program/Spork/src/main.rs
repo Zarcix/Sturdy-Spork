@@ -124,68 +124,51 @@ fn main_menu_print(window: &pancurses::Window, client: &reqwest::blocking::Clien
 
 fn control_win_print(window: &pancurses::Window, client: &reqwest::blocking::Client) {
     //TODO need to update this with time
-
+    let stats = api::tv_calls::TVMedia({
+        let client = client.clone(); client
+    });
     // Reverse
     window.mvprintw(4, 1, "<--");
     window.mvprintw(5, 1, "<<-");
     window.mvprintw(6, 1, "<<<");
 
+    // Time Counting Stuff
+    let playing = match stats.1 {
+        0 => {
+            "Playing Nothing"
+        }
+
+        1 => {
+            "Playing"
+        }
+
+        2 => {
+            "Paused"
+        }
+
+        _ => {
+            ""
+        }
+    }.to_string();
+    let timeque = format!("{}s / {}s", stats.0.0, stats.0.1);
+
+    let adj = window.get_max_x() / 2 - playing.len() as i32 / 2 - 1;
+    window.mvprintw(1, adj, playing);
+
+    let adj = window.get_max_x() / 2 - timeque.len() as i32 / 2 - 1;
+    window.mvprintw(2, adj, timeque);
+
     // Space
-    window.mvprintw(4, window.get_max_x() / 2 - 7, "Pause");
-    window.mvprintw(5, window.get_max_x() / 2 - 7, "Space");
-    window.mvprintw(6, window.get_max_x() / 2 - 7, "Pause");
+    window.mvprintw(4, window.get_max_x() / 2 - 3, "Pause");
+    window.mvprintw(5, window.get_max_x() / 2 - 3, "Space");
+    window.mvprintw(6, window.get_max_x() / 2 - 3, "Pause");
 
     // Fast-Forward
     window.mvprintw(4, window.get_max_x() - 4, "-->");
     window.mvprintw(5, window.get_max_x() - 4, "->>");
     window.mvprintw(6, window.get_max_x() - 4, ">>>");
 
-    let stats = vid_status(client);
-    window.printw(format!("{:?}", stats));
-}
 
-fn vid_status(client: &reqwest::blocking::Client) -> ((i32, i32), i32) {
-
-    let ip = unsafe {&IP};
-    let status = client.get(format!("http://{ip}:8060/query/media-player")).send().unwrap().text().unwrap();
-    let mut times = (-1, -1);
-    let is_playing = is_playing(&status);
-
-    if is_playing != 0 {
-        times = time_status(&status);
-    }
-
-    return (times, is_playing)
-
-}
-
-fn is_playing(req: &String) -> i32 {
-    let split: Vec<&str> = req.split("state=\"").collect();
-    let string = split[1].to_string();
-    let split: Vec<&str> = string.split("\">").collect();
-    let string = split[0];
-
-    if string == "play" { return 1 }
-    if string == "pause" { return 2 }
-
-    return 0;
-}
-
-fn time_status(req: &String) -> (i32, i32) {
-    let split: Vec<&str> = req.split("<position>").collect();
-    let string = split[1].to_string();
-    let split: Vec<&str> = string.split(" ms</position>").collect();
-    let mut currentTime = split[0].parse::<i32>().unwrap();
-    currentTime = currentTime / 1000;
-
-
-    let split: Vec<&str> = req.split("<duration>").collect();
-    let string = split[1].to_string();
-    let split: Vec<&str> = string.split(" ms</duration>").collect();
-    let mut maxTime = split[0].parse::<i32>().unwrap();
-    maxTime = maxTime / 1000;
-
-    return (currentTime, maxTime)
 }
 
 fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Client, getch: Option<pancurses::Input>) {
@@ -233,6 +216,21 @@ fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Clien
             }
             return
         }
+        pancurses::Input::KeyUp => {
+            { // TV Volume Up
+                std::thread::spawn(|| {
+                    api::tv_calls::TVVolUp(client)
+                });
+            }
+        }
+
+        pancurses::Input::KeyDown => {
+            { // TV Volume Down
+                std::thread::spawn(|| {
+                    api::tv_calls::TVVolDown(client)
+                });
+            }
+        }
 
         // Application Controls
         pancurses::Input::Character('\u{1b}') => { // Esc Control
@@ -240,7 +238,7 @@ fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Clien
             { // TV Home
                 std::thread::spawn(move || {
                     api::tv_calls::TVHome(client);
-                });
+                }).join().unwrap();
             }
 
             pancurses::endwin();
