@@ -104,6 +104,8 @@ fn main_menu_print(window: &pancurses::Window, client: &reqwest::blocking::Clien
     loop {
         window.clear();
         window.printw("Esc to quit");
+        window.mv(1, 0);
+        window.printw("(Q)ueue a video");
         let (max_y,max_x) = window.get_max_yx();
 
         let control_win = window.subwin(8, max_x, max_y - 8, 0).unwrap();
