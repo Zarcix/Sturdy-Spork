@@ -1,7 +1,7 @@
-use phf::phf_map;
 use reqwest::blocking::Client;
+use phf::phf_map;
 
-static FILETYPES: phf::Map<&'static str, (&'static str, &'static str)> = phf_map! {
+pub static FILETYPES: phf::Map<&'static str, (&'static str, &'static str)> = phf_map! {
     "mp4" => ("video", "mp4"),
     "mkv" => ("video", "x-matroska"),
     "m3u8" =>("video", "hls"),
