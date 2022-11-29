@@ -234,18 +234,7 @@ fn main_menu_parse(window: &pancurses::Window, client: &reqwest::blocking::Clien
             }
         }
 
-        // Application Controls
-        pancurses::Input::Character('\u{1b}') => { // Esc Control
-            // Relocate user back to home
-            { // TV Home
-                std::thread::spawn(move || {
-                    api::tv_calls::TVHome(client);
-                }).join().unwrap();
-            }
-
-            pancurses::endwin();
-            std::process::exit(0);
-        }
+        
 
         // Queueing Videos
         pancurses::Input::Character('q') => {
